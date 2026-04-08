@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>MiroFish Swarm Emergence Demo v1.15</title>
+    <style>
+        body { font-family: "Microsoft YaHei", sans-serif; background: #0a0a0a; color: #ddd; margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; }
+        h1 { text-align: center; color: #0f0; }
+        .panel { background: #111; padding: 15px; border: 1px solid #0f0; margin-bottom: 15px; border-radius: 8px; }
+        #log { height: 520px; overflow-y: scroll; background: #0a0a0a; padding: 15px; border: 1px solid #333; white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
+        .input-area { margin-top: 20px; }
+        textarea { width: 100%; height: 80px; background: #222; color: #ddd; border: 1px solid #0f0; padding: 10px; resize: vertical; }
+        button { padding: 10px 20px; margin: 5px; background: #222; color: #0f0; border: 1px solid #0f0; cursor: pointer; }
+        button:hover { background: #0a0; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .mode-btn { background: #333; }
+        .active { background: #0a0; color: #000; }
+        .info { font-size: 13px; color: #888; margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MiroFish Swarm Emergence v1.15</h1>
+        <div class="panel">
+            <h3>初始化设置（类似JanitorAI API Settings）</h3>
+            <p>故事种子：<input id="storySeed" style="width:70%" value="新DLC平衡调整引发玩家社区激烈争议，支持派与反对派逐渐分裂。"></p>
+            <p>代理人模式：
+                <select id="agentMode">
+                    <option value="janitor">JanitorLLM 默认执行模式</option>
+                    <option value="custom">Custom Proxy（风格自由）</option>
+                </select>
+            </p>
+            <p>风格密钥（Custom Prompt）：<input id="styleKey" style="width:70%" value="像真实玩家在社区论坛吵架，带网络黑话、情绪化表达"></p>
+            <button onclick="startSimulation()">保存设置并启动涌现</button>
+            <button onclick="resetAll()">重置故事（从初始卡开始）</button>
+        </div>
+
+        <div id="log"></div>
+
+        <!-- 玩家输入窗口：每10轮开启一次 -->
+        <div class="input-area panel" id="playerInputArea" style="display:none;">
+            <h3>第 <span id="currentGroup"></span> 组（每10轮） - 玩家参与机会</h3>
+            <div>
+                <button class="mode-btn active" onclick="setMode(0)" id="mode0">作为角色发言</button>
+                <button class="mode-btn" onclick="setMode(1)" id="mode1">注入剧情事件</button>
+            </div>
+            <select id="targetAgent" style="margin:8px 0; width:100%;"></select>
+            <textarea id="playerInput" placeholder="输入内容...（作为角色发言时请选择角色；注入剧情时描述世界事件）"></textarea>
+            <button onclick="submitPlayerInput()">提交输入</button>
+            <button onclick="skipInput()">跳过 → 继续自然涌现</button>
+            <div class="info">输入后将影响当前数值状态，继续下一组10轮</div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 极简黄金原则 ====================
+        let initialCards = [];      // 只读初始角色卡（历史基准）
+        let activeAgents = [];      // 当前活跃数值状态（内存 + localStorage）
+        let currentTick = 0;
+        let worldContext = "";
+        let styleKey = "";
+        let isInputTurn = false;
+        let currentGroup = 0;
+        let playerInputMode = 0; // 0=角色发言, 1=注入剧情
+
+        const log = (msg) => {
+            const time = new Date().toLocaleTimeString('zh-CN');
+            document.getElementById('log').innerHTML += `[${time}] ${msg}\n`;
+            document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
+        };
+
+        function saveState() {
+            const saveData = {
+                tick: currentTick,
+                agents: activeAgents,
+                worldContext: worldContext,
+                group: currentGroup
+            };
+            localStorage.setItem('swarm_active_save', JSON.stringify(saveData));
+        }
+
+        function loadState() {
+            const saved = localStorage.getItem('swarm_active_save');
+            if (saved) {
+                const data = JSON.parse(saved);
+                currentTick = data.tick;
+                activeAgents = data.agents;
+                worldContext = data.worldContext;
+                currentGroup = data.group || 0;
+                log(`已从本地恢复状态 - 当前Tick: ${currentTick}，第${currentGroup}组`);
+                return true;
+            }
+            return false;
+        }
+
+        function startSimulation() {
+            document.getElementById('log').innerHTML = '';
+            log("=== MiroFish Swarm Emergence v1.15 已启动 ===");
+
+            const seed = document.getElementById('storySeed').value.trim();
+            styleKey = document.getElementById('styleKey').value.trim();
+            worldContext = seed || "新DLC平衡调整引发玩家社区激烈争议";
+
+            // 故事预读生成只读初始角色卡
+            initialCards = extractInitialCards(seed);
+            log(`故事预读完成，生成 ${initialCards.length} 个初始角色卡（已锁定只读历史档案）`);
+
+            // 尝试恢复之前状态
+            if (!loadState()) {
+                // 新建活跃状态
+                activeAgents = initialCards.map(card => ({
+                    ...card,
+                    currentPhysique: card.initialPhysique,
+                    currentStance: card.initialStance,
+                    currentAwareness: card.initialAwareness,
+                    memory: [`最初记忆：${card.scenario}`]
+                }));
+                currentTick = 0;
+                currentGroup = 0;
+            }
+
+            renderAgentList();
+            runNextTickGroup();
+        }
+
+        function extractInitialCards(seed) {
+            // 极简模拟：从故事种子提取名字与初始三轨数值
+            const names = ["裂隙者", "守望者", "焰心", "岚息", "渊默", "星渊", "雷鸣", "雾隐"];
+            return names.map((name, i) => ({
+                name: name,
+                initialPhysique: 5 + Math.floor(Math.random()*3) - 1,
+                initialStance: (Math.random() - 0.5) * 1.2,
+                initialAwareness: 6.5 + Math.random() * 1.5,
+                scenario: seed.substring(0, 30) + "..."
+            }));
+        }
+
+        function renderAgentList() {
+            const select = document.getElementById('targetAgent');
+            select.innerHTML = '';
+            activeAgents.forEach((agent, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.text = `${agent.name} (Physique:${agent.currentPhysique.toFixed(1)} Stance:${agent.currentStance.toFixed(2)})`;
+                select.appendChild(opt);
+            });
+        }
+
+        function runNextTickGroup() {
+            isInputTurn = false;
+            document.getElementById('playerInputArea').style.display = 'none';
+
+            for (let i = 0; i < 10; i++) {
+                currentTick++;
+                let tickLog = `--- Tick ${currentTick} | 世界: ${worldContext} ---\n`;
+
+                activeAgents.forEach(agent => {
+                    // 极简数值自由涌现
+                    agent.currentPhysique = Math.max(0, Math.min(10, agent.currentPhysique + (Math.random() - 0.5) * 1.2));
+                    agent.currentStance += (Math.random() - 0.5) * 0.25;
+                    agent.currentAwareness = Math.max(5, Math.min(9, agent.currentAwareness + (Math.random() - 0.5) * 0.3));
+
+                    // 代理人模式自然翻译（极简）
+                    const physDesc = agent.currentPhysique < 2 ? "声音虚弱颤抖" : 
+                                    agent.currentPhysique > 8 ? "情绪激动，动作激烈" : "语气平稳";
+                    const action = Math.random() > 0.5 ? "在社区发帖" : "与他人激烈讨论";
+                    
+                    tickLog += `${agent.name} ${physDesc} ${action}：“${generateNaturalSpeech(agent)}”\n`;
+                });
+
+                log(tickLog);
+            }
+
+            currentGroup++;
+            saveState();
+            renderAgentList();
+
+            // 每10轮开启输入窗口
+            document.getElementById('playerInputArea').style.display = 'block';
+            document.getElementById('currentGroup').textContent = currentGroup;
+            isInputTurn = true;
+            log(`第 ${currentGroup} 组 10轮 已完成 → 等待玩家输入或跳过`);
+        }
+
+        function generateNaturalSpeech(agent) {
+            const stanceWord = agent.currentStance > 0.5 ? "这次DLC改得太好了！" : 
+                              agent.currentStance < -0.5 ? "这平衡改得我直接想退坑！" : "平衡调整还是有待观察...";
+            return stanceWord + (Math.random() > 0.5 ? " 你们怎么看？" : "");
+        }
+
+        function setMode(mode) {
+            playerInputMode = mode;
+            document.querySelectorAll('.mode-btn').forEach((b,i) => b.classList.toggle('active', i===mode));
+        }
+
+        function submitPlayerInput() {
+            if (!isInputTurn) return;
+            const inputText = document.getElementById('playerInput').value.trim();
+            if (!inputText) return;
+
+            if (playerInputMode === 0) {
+                // 作为角色发言
+                const idx = parseInt(document.getElementById('targetAgent').value);
+                const agent = activeAgents[idx];
+                agent.currentStance += (Math.random() - 0.5) * 0.4; // 轻微影响数值
+                agent.memory.push(`玩家作为${agent.name}发言：${inputText}`);
+                log(`【玩家Steer】${agent.name}：${inputText}`);
+            } else {
+                // 注入剧情事件
+                worldContext += ` | 玩家事件: ${inputText}`;
+                activeAgents.forEach(agent => {
+                    agent.currentPhysique = Math.max(0, Math.min(10, agent.currentPhysique + (Math.random() - 0.5) * 2));
+                });
+                log(`【玩家注入剧情】${inputText}`);
+            }
+
+            document.getElementById('playerInput').value = '';
+            saveState();
+            runNextTickGroup(); // 继续下一组10轮
+        }
+
+        function skipInput() {
+            if (!isInputTurn) return;
+            log("玩家选择跳过 → 继续自然涌现");
+            runNextTickGroup();
+        }
+
+        function resetAll() {
+            if (confirm("确定重置故事？将清除当前保存状态，从初始角色卡重新开始。")) {
+                localStorage.removeItem('swarm_active_save');
+                document.getElementById('log').innerHTML = '';
+                startSimulation();
+            }
+        }
+
+        // 初始提示
+        log("MiroFish Swarm Emergence v1.15 已就绪");
+        log("每10轮将自动暂停，等待玩家输入或跳过");
+        log("支持localStorage持久化：关闭页面几天后仍可无缝继续");
+    </script>
+</body>
+</html>

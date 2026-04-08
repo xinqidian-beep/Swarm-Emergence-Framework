@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>MiroFish Swarm Emergence Demo v1.15.2 - 真实API接口版</title>
+    <style>
+        body { font-family: "Microsoft YaHei", sans-serif; background: #0a0a0a; color: #ddd; margin: 0; padding: 20px; }
+        .container { max-width: 1100px; margin: auto; }
+        h1 { text-align: center; color: #0f0; }
+        .panel { background: #111; padding: 15px; border: 1px solid #0f0; margin-bottom: 15px; border-radius: 8px; }
+        #log { height: 520px; overflow-y: scroll; background: #0a0a0a; padding: 15px; border: 1px solid #333; white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
+        .input-area { margin-top: 20px; }
+        textarea { width: 100%; height: 80px; background: #222; color: #ddd; border: 1px solid #0f0; padding: 10px; resize: vertical; }
+        button { padding: 10px 20px; margin: 5px; background: #222; color: #0f0; border: 1px solid #0f0; cursor: pointer; }
+        button:hover { background: #0a0; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        input, select { width: 100%; padding: 8px; margin: 5px 0; background: #222; color: #ddd; border: 1px solid #0f0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MiroFish Swarm Emergence v1.15.2 - 真实API接口版</h1>
+        
+        <div class="panel">
+            <h3>JanitorAI风格真实API设置</h3>
+            
+            <!-- 文件解析 -->
+            <button onclick="document.getElementById('fileInput').click()">📁 选择故事文件一键解析</button>
+            <input type="file" id="fileInput" accept=".txt,.md" onchange="parseFile(event)" style="display:none;">
+            
+            <p>或手动输入故事种子（用于解析角色卡）：</p>
+            <textarea id="storySeed" rows="3" placeholder="粘贴你的故事文本..."></textarea>
+            
+            <h4>真实API调用配置（关键接口）</h4>
+            <select id="apiProvider">
+                <option value="openai">OpenAI (gpt-4o / gpt-4-turbo)</option>
+                <option value="claude">Anthropic Claude</option>
+                <option value="janitor">JanitorAI Proxy</option>
+                <option value="custom">自定义 Proxy</option>
+            </select>
+            
+            <p>API Base URL: <input id="apiBase" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1"></p>
+            <p>API Key: <input id="apiKey" type="password" placeholder="sk-... 或 JanitorAI Key"></p>
+            <p>Model Name: <input id="modelName" value="gpt-4o-mini" placeholder="gpt-4o / claude-3-5-sonnet / ..."></p>
+            <p>风格提示（System Prompt）: <input id="styleKey" value="你是一个沉浸式叙事引擎，只输出自然的人类对话和行为描述，不要解释参数。" style="width:100%"></p>
+            
+            <button onclick="startSimulation()">🚀 保存API设置并启动真实涌现</button>
+            <button onclick="resetAll()">重置全部</button>
+        </div>
+
+        <div id="log"></div>
+
+        <!-- 每10轮玩家输入窗口 -->
+        <div class="input-area panel" id="playerInputArea" style="display:none;">
+            <h3>第 <span id="currentGroup"></span> 组（每10轮） - 玩家参与机会</h3>
+            <div>
+                <button class="mode-btn active" onclick="setMode(0)" id="mode0">作为角色发言</button>
+                <button class="mode-btn" onclick="setMode(1)" id="mode1">注入剧情事件</button>
+            </div>
+            <select id="targetAgent" style="margin:8px 0; width:100%;"></select>
+            <textarea id="playerInput" placeholder="在这里输入..."></textarea>
+            <button onclick="submitPlayerInput()">提交输入（将调用API生成回应）</button>
+            <button onclick="skipInput()">跳过本次 → 继续自然涌现</button>
+        </div>
+    </div>
+
+    <script>
+        let initialCards = [];
+        let activeAgents = [];
+        let currentTick = 0;
+        let worldContext = "";
+        let isInputTurn = false;
+        let currentGroup = 0;
+        let playerInputMode = 0;
+
+        const log = (msg) => {
+            const time = new Date().toLocaleTimeString('zh-CN');
+            document.getElementById('log').innerHTML += `[${time}] ${msg}\n`;
+            document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
+        };
+
+        function saveState() {
+            localStorage.setItem('swarm_active_save', JSON.stringify({
+                tick: currentTick, agents: activeAgents, worldContext, group: currentGroup
+            }));
+        }
+
+        function loadState() {
+            const saved = localStorage.getItem('swarm_active_save');
+            if (saved) {
+                const data = JSON.parse(saved);
+                currentTick = data.tick || 0;
+                activeAgents = data.agents || [];
+                worldContext = data.worldContext || "";
+                currentGroup = data.group || 0;
+                log(`恢复上次状态 - Tick ${currentTick}`);
+                return true;
+            }
+            return false;
+        }
+
+        // 文件解析（保持极简）
+        async function parseFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const text = await file.text();
+            document.getElementById('storySeed').value = text.substring(0, 600);
+            initialCards = simpleParseStory(text);
+            log(`文件解析成功：生成 ${initialCards.length} 个初始角色卡`);
+        }
+
+        function simpleParseStory(text) {
+            const nameRegex = /([一-龥]{2,8}|[A-Za-z\s]{4,25})/g;
+            let names = [...new Set((text.match(nameRegex) || []).map(n => n.trim()))].slice(0, 12);
+            if (names.length < 3) names = ["裂隙者","守望者","焰心","岚息","渊默","星渊"];
+            return names.map(name => ({
+                name,
+                initialPhysique: 4.5 + Math.random()*3,
+                initialStance: (Math.random()-0.5)*1.6,
+                initialAwareness: 6.2 + Math.random()*2,
+                scenario: text.substring(0, 60) + "..."
+            }));
+        }
+
+        async function startSimulation() {
+            document.getElementById('log').innerHTML = '';
+            log("=== MiroFish v1.15.2 真实API接口版启动 ===");
+
+            const seed = document.getElementById('storySeed').value.trim();
+            worldContext = seed || "社区DLC争议";
+
+            if (initialCards.length === 0) initialCards = simpleParseStory(seed);
+
+            if (!loadState()) {
+                activeAgents = initialCards.map(c => ({
+                    ...c,
+                    currentPhysique: c.initialPhysique,
+                    currentStance: c.initialStance,
+                    currentAwareness: c.initialAwareness,
+                    memory: [`初始：${c.scenario}`]
+                }));
+            }
+
+            renderAgentList();
+            runNextTickGroup(true); // true 表示首次启动
+        }
+
+        function renderAgentList() {
+            const sel = document.getElementById('targetAgent');
+            sel.innerHTML = '';
+            activeAgents.forEach((a,i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.text = `${a.name} (P:${a.currentPhysique.toFixed(1)} S:${a.currentStance.toFixed(2)})`;
+                sel.appendChild(opt);
+            });
+        }
+
+        async function runNextTickGroup(isFirst = false) {
+            isInputTurn = false;
+            document.getElementById('playerInputArea').style.display = 'none';
+
+            for (let i = 0; i < 10; i++) {
+                currentTick++;
+                let tickLog = `--- Tick ${currentTick} ---\n`;
+
+                for (let agent of activeAgents) {
+                    // 数值自由涌现
+                    agent.currentPhysique = Math.max(0, Math.min(10, agent.currentPhysique + (Math.random()-0.5)*1.3));
+                    agent.currentStance += (Math.random()-0.5)*0.28;
+
+                    // 真实API调用准备（v1.15.2核心）
+                    const prompt = `角色：${agent.name}\n当前状态：Physique ${agent.currentPhysique.toFixed(1)} | Stance ${agent.currentStance.toFixed(2)}\n世界：${worldContext}\n请以自然沉浸式对话和行为输出，不要解释参数。`;
+
+                    const response = await callRealAPI(prompt);
+                    tickLog += `${agent.name}：${response}\n`;
+                }
+                log(tickLog);
+            }
+
+            currentGroup++;
+            saveState();
+            renderAgentList();
+
+            document.getElementById('playerInputArea').style.display = 'block';
+            document.getElementById('currentGroup').textContent = currentGroup;
+            isInputTurn = true;
+            log(`第 ${currentGroup} 组完成 → 等待玩家输入或跳过`);
+        }
+
+        // 真实API调用核心函数（可真实调用外部模型）
+        async function callRealAPI(prompt) {
+            const provider = document.getElementById('apiProvider').value;
+            const base = document.getElementById('apiBase').value;
+            const key = document.getElementById('apiKey').value;
+            const model = document.getElementById('modelName').value;
+            const system = document.getElementById('styleKey').value;
+
+            if (!key) {
+                // 如果没有填Key，使用本地模拟回退
+                return "（API Key未填写，使用本地模拟）这次DLC改得我情绪很复杂...你们呢？";
+            }
+
+            try {
+                const res = await fetch(`${base}/chat/completions`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${key}`
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [
+                            { role: "system", content: system },
+                            { role: "user", content: prompt }
+                        ],
+                        temperature: 0.85,
+                        max_tokens: 180
+                    })
+                });
+                const data = await res.json();
+                return data.choices[0].message.content.trim();
+            } catch (e) {
+                return "（API调用失败，回退本地）我现在心情很乱，这平衡改得太突然了...";
+            }
+        }
+
+        function setMode(mode) { 
+            playerInputMode = mode; 
+            document.querySelectorAll('.mode-btn').forEach((b,i) => b.classList.toggle('active', i===mode));
+        }
+
+        async function submitPlayerInput() {
+            if (!isInputTurn) return;
+            const text = document.getElementById('playerInput').value.trim();
+            if (!text) return;
+
+            if (playerInputMode === 0) {
+                const idx = parseInt(document.getElementById('targetAgent').value);
+                const agent = activeAgents[idx];
+                agent.currentStance += (Math.random() - 0.5) * 0.6;
+                log(`【玩家扮演 ${agent.name}】${text}`);
+            } else {
+                worldContext += ` | 玩家剧情注入: ${text}`;
+                log(`【玩家注入剧情】${text}`);
+            }
+
+            document.getElementById('playerInput').value = '';
+            saveState();
+            runNextTickGroup();
+        }
+
+        function skipInput() {
+            if (!isInputTurn) return;
+            log("跳过本次玩家输入 → 继续自然涌现");
+            runNextTickGroup();
+        }
+
+        function resetAll() {
+            if (confirm("确定重置？当前保存状态将被清除。")) {
+                localStorage.removeItem('swarm_active_save');
+                document.getElementById('log').innerHTML = '';
+                initialCards = [];
+                startSimulation();
+            }
+        }
+
+        // 启动提示
+        log("MiroFish v1.15.2 真实API接口版就绪");
+        log("已恢复文件一键解析 + 真实API调用配置");
+        log("请填写API Key后启动，即可真实调用外部模型生成对话");
+    </script>
+</body>
+</html>
