@@ -21,18 +21,19 @@ console.log(`[心跳频率] 每 ${config.tickIntervalMs}ms 执行一次 Tick 演
 
 function runTick() {
     currentTick++;
-    let logMsg = `--- Tick ${currentTick} ---\n`;
+    let logMsg = "--- Tick " + currentTick + " ---\n";
 
     agents.forEach(agent => {
         agent.physique = Math.max(0, Math.min(10, agent.physique + (Math.random() - 0.5) * 1.0));
         agent.stance += (Math.random() - 0.5) * 0.3;
         agent.stance = Math.max(-1, Math.min(1, agent.stance));
 
-        // 生成本地槽位规则台词
+        // 生成本地规则台词
         const speech = generateDialogue(agent);
 
-        logMsg += `  * 实体: \({agent.name.padEnd(6, ' ')} | 体质(P):\){agent.physique.toFixed(2)} | 立场(S): ${agent.stance.toFixed(2)}\n`;
-        logMsg += `    └─ 状态台词: "${speech}"\n`;
+        // 使用最稳妥的加号拼接，绝不会出现符号错乱
+        logMsg += "  * 实体: " + agent.name.padEnd(6, ' ') + " | 体质(P): " + agent.physique.toFixed(2) + " | 立场(S): " + agent.stance.toFixed(2) + "\n";
+        logMsg += "    └─ 状态台词: \"" + speech + "\"\n";
     });
 
     console.log(logMsg);
