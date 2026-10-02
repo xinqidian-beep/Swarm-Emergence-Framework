@@ -1,38 +1,26 @@
-// core/slotMatcher.js - 本地轻量规则与槽位文本匹配引擎
+// core/slotMatcher.js (未来升级版：调用本地轻量 LLM)
+async function generateLocalLLMDialogue(agent) {
+    let mood = "中立";
+    if (agent.stance < -0.3) mood = "敌对/抱怨";
+    if (agent.stance > 0.3) mood = "友好/乐观";
 
-// 预设的本地语料库（按立场区间分类）
-const dialoguePool = {
-    hostile: [ // 负向立场 (stance < -0.3)
-        "这日子没法过了，到处都是危机...",
-        "别靠近我，我信不过这里的任何人。",
-        "资源越来越少，迟早要出大事。",
-        "哼，那些家伙根本不知道他们在干什么。"
-    ],
-    neutral: [ // 中间立场 (-0.3 <= stance <= 0.3)
-        "今天天气倒是不错，就是有点冷。",
-        "你看到前边那群人了吗？神神秘秘的。",
-        "我得去把手头这点活儿干完。",
-        "日子就这么一天天过呗，还能怎样。"
-    ],
-    friendly: [ // 正向立场 (stance > 0.3)
-        "哈哈，跟着大家一起干，生活总算有盼头了！",
-        "我觉得情况在变好，大家要团结.",
-        "如果你需要帮忙，随时来找我！",
-        "这地方越来越有生气了，不是吗？"
-    ]
-};
+    const prompt = `角色:\({agent.name}，当前心情:\){mood}。请用一句老滚5风格的简短台词表达当前心境，不要超过20个字，不要输出多余解释。`;
 
-function generateDialogue(agent) {
-    let category = 'neutral';
-    if (agent.stance < -0.3) {
-        category = 'hostile';
-    } else if (agent.stance > 0.3) {
-        category = 'friendly';
+    // 通过 Node.js 内置 fetch 请求本地 Ollama 接口 (以 phi3 为例)
+    try {
+        const response = await fetch('http://localhost:11434/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: "phi3:mini",
+                prompt: prompt,
+                stream: false,
+                options: { temperature: 0.7, num_predict: 30 }
+            })
+        });
+        const data = await response.json();
+        return data.response.trim();
+    } catch (e) {
+        return "今天天气真不错。"; // 降级兜底方案，防止本地大模型未启动时报错
     }
-
-    const pool = dialoguePool[category];
-    const randomIndex = Math.floor(Math.random() * pool.length);
-    return pool[randomIndex];
 }
-
-module.exports = { generateDialogue };
