@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-
 const { generateDialogue } = require('./core/slotMatcher');
 
 const configPath = path.join(__dirname, 'config', 'worldConfig.json');
@@ -29,14 +28,11 @@ function runTick() {
         agent.stance += (Math.random() - 0.5) * 0.3;
         agent.stance = Math.max(-1, Math.min(1, agent.stance));
 
-        // 生成本地规则台词
+        // 生成本地槽位规则台词
         const speech = generateDialogue(agent);
 
         logMsg += `  * 实体: \({agent.name.padEnd(6, ' ')} | 体质(P):\){agent.physique.toFixed(2)} | 立场(S): ${agent.stance.toFixed(2)}\n`;
         logMsg += `    └─ 状态台词: "${speech}"\n`;
-    });
-
-        logMsg += `  * 实体: \({agent.name.padEnd(6, ' ')} | 体质(P):\){agent.physique.toFixed(2)} | 立场(S): ${agent.stance.toFixed(2)}\n`;
     });
 
     console.log(logMsg);
