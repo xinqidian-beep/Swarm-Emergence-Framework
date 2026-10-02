@@ -1,0 +1,9 @@
+{
+  "worldName": "Skyrim-Local-Cluster",
+  "tickIntervalMs": 2000,
+  "initialAgents": [
+    { "name": "裂隙者", "physique": 6.0, "stance": -0.2 },
+    { "name": "守望者", "physique": 7.5, "stance": 0.5 },
+    { "name": "焰心", "physique": 5.0, "stance": 0.1 }
+  ]
+}

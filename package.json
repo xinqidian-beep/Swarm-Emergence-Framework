@@ -1,0 +1,10 @@
+{
+  "name": "swarm-emergence-framework",
+  "version": "1.0.0",
+  "description": "Local swarm emergence engine for sandbox games",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {}
+}
