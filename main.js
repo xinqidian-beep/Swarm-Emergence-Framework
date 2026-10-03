@@ -1,6 +1,7 @@
+// main.js - 涌现系统主控总线
 const fs = require('fs');
 const path = require('path');
-const { generateDialogue } = require('./core/slotMatcher');
+const { runFractalPipeline } = require('./core/fractalPipeline');
 
 const configPath = path.join(__dirname, 'config', 'worldConfig.json');
 if (!fs.existsSync(configPath)) {
@@ -10,42 +11,36 @@ if (!fs.existsSync(configPath)) {
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
 let currentTick = 0;
-let agents = config.initialAgents.map(a => ({
-    ...a,
-    memory: [`初始状态加载`]
-}));
+let agents = config.initialAgents.map(a => ({ ...a }));
 
-console.log(`[初始化] 世界 "${config.worldName}" 启动成功！`);
-console.log(`[初始化] 初始智能体数量: ${agents.length}`);
-console.log(`[心跳频率] 每 ${config.tickIntervalMs}ms 执行一次 Tick 演化\n`);
+console.log(`[初始化] 涌现世界 "${config.worldName}" 启动成功！`);
+console.log(`[范式架构] 四元分形闭环 (Sample -> Dynamics -> Compute -> Transmit)`);
+console.log(`[心跳频率] 每 ${config.tickIntervalMs}ms 推进一次时空 Tick\n`);
 
-function runTick() {
+async function runTick() {
     currentTick++;
     let logMsg = "--- Tick " + currentTick + " ---\n";
 
+    // 宏观并行激发所有局域自治代理的分形流水线
+    agents = await Promise.all(agents.map(agent => runFractalPipeline(agent)));
+
     agents.forEach(agent => {
-        agent.physique = Math.max(0, Math.min(10, agent.physique + (Math.random() - 0.5) * 1.0));
-        agent.stance += (Math.random() - 0.5) * 0.3;
-        agent.stance = Math.max(-1, Math.min(1, agent.stance));
-
-        // 生成本地规则台词
-        const speech = generateDialogue(agent);
-
-        // 使用最稳妥的加号拼接，绝不会出现符号错乱
-        logMsg += "  * 实体: " + agent.name.padEnd(6, ' ') + " | 体质(P): " + agent.physique.toFixed(2) + " | 立场(S): " + agent.stance.toFixed(2) + "\n";
-        logMsg += "    └─ 状态台词: \"" + speech + "\"\n";
+        logMsg += "  * 实体: " + agent.name.padEnd(6, ' ') + 
+                  " | 体质(P): " + agent.physique.toFixed(2) + 
+                  " | 立场(S): " + agent.stance.toFixed(2) + 
+                  " | 谐振(R): " + agent.resonance.toFixed(2) + "\n";
+        logMsg += "    └─ 涌现台词: \"" + agent.currentDialogue + "\"\n";
     });
 
     console.log(logMsg);
 
+    // 状态持久化写入
     const stateData = {
         tick: currentTick,
         timestamp: new Date().toISOString(),
         agents: agents
     };
-    
-    const statePath = path.join(__dirname, 'world_state.json');
-    fs.writeFileSync(statePath, JSON.stringify(stateData, null, 2), 'utf8');
+    fs.writeFileSync(path.join(__dirname, 'world_state.json'), JSON.stringify(stateData, null, 2), 'utf8');
 }
 
 setInterval(runTick, config.tickIntervalMs);

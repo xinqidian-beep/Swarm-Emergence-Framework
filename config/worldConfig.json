@@ -2,8 +2,29 @@
   "worldName": "Skyrim-Local-Cluster",
   "tickIntervalMs": 2000,
   "initialAgents": [
-    { "name": "裂隙者", "physique": 6.0, "stance": -0.2 },
-    { "name": "守望者", "physique": 7.5, "stance": 0.5 },
-    { "name": "焰心", "physique": 5.0, "stance": 0.1 }
+    {
+      "name": "裂隙者",
+      "archetype": "荒野游侠",
+      "intrinsicFactor": 0.015,
+      "physique": 5.0,
+      "stance": 0.0,
+      "resonance": 5.0
+    },
+    {
+      "name": "守望者",
+      "archetype": "晨星守卫",
+      "intrinsicFactor": -0.01,
+      "physique": 6.0,
+      "stance": 0.2,
+      "resonance": 6.0
+    },
+    {
+      "name": "焰心",
+      "archetype": "失落法师",
+      "intrinsicFactor": 0.035,
+      "physique": 4.0,
+      "stance": -0.2,
+      "resonance": 4.5
+    }
   ]
 }

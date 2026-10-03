@@ -25,3 +25,30 @@ MIT License
 ---
 
 **当前版本**：v0.8.0-preview（实验阶段，欢迎反馈与PR）
+
+C:\Swarm-Emergence-Framework\
+│
+├── config\
+│   └── worldConfig.json        # 初始世界种子配置
+│
+├── core\
+│   └── modules\
+│       ├── dynamics.js         # 阶段 1：内生互锁动力学模块
+│       ├── dialogue.js         # 阶段 2：状态台词渲染模块
+│       └── memory.js           # 阶段 3：长短期记忆预留模块（透传）
+│
+├── main.js                     # 架构总线与 Tick 管道调度器
+└── world_state.json            # 实时持久化输出状态
+
+C:\Swarm-Emergence-Framework\
+│
+├── config\
+│   └── worldConfig.json
+│
+├── core\
+│   ├── fractalPipeline.js      # 四元分形通用管道调度器
+│   └── modules\
+│       ├── dynamicsModule.js   # 动力学分形单元
+│       └── dialogueModule.js   # 对话计算分形单元
+│
+└── main.js                     # 总体心跳总线
