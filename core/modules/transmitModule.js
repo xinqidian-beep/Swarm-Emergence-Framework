@@ -1,23 +1,19 @@
-// core/modules/dialogueModule.js - 纯净反引号插值与引语钳制网关
-
+// core/modules/transmitModule.js
 function encodeToPrompt(agentPacket) {
-    // 确保正确解构
-    const name = agentPacket.name || "未知实体";
-    const archetype = agentPacket.archetype || "流浪者";
+    const name = agentPacket.name || "流浪者";
+    const archetype = agentPacket.archetype || "独行者";
     const shortTermGoal = agentPacket.shortTermGoal || "生存";
     const memoryBuffer = agentPacket.memoryBuffer || [];
     
     const memoryContext = (memoryBuffer.length > 0 && memoryBuffer[memoryBuffer.length - 1].text) 
         ? memoryBuffer[memoryBuffer.length - 1].text 
-        : "四周一片死寂";
+        : "荒野死寂";
 
-    // 注意：这里必须用反引号 `` 并且用 ${} 正确包裹变量！绝不出现裸露的大括号。
-    return `\({archetype}\){name}正在\({shortTermGoal}。他回想起：\){memoryContext}。他低声说道：“`;
+    // 采用标准的模板字符串插值，绝对没有转义污染
+    return `\({archetype}\){name}正处于\({shortTermGoal}状态。记忆碎片：\){memoryContext}。他环顾四周，低声自语：“`;
 }
 
 async function dialogueModule(agentPacket) {
-    const { name, archetype, physique, stance, resonance, intrinsicFactor, shortTermGoal, memoryBuffer, ...rest } = agentPacket;
-
     let currentDialogue = "...";
 
     try {
@@ -29,39 +25,31 @@ async function dialogueModule(agentPacket) {
                 prompt: encodeToPrompt(agentPacket),
                 stream: false,
                 options: { 
-                    temperature: 0.7, 
+                    temperature: 0.75, 
                     num_predict: 20 
                 }
             }),
-            signal: AbortSignal.timeout(4000)
+            signal: AbortSignal.timeout(3500)
         });
 
         if (response.ok) {
             const data = await response.json();
             if (data && data.response) {
-                // 清洗引号和多余换行
                 const raw = data.response.trim().split('\n')[0].replace(/["”’]/g, '');
+                const isRefusal = raw.includes("sorry") || raw.includes("抱歉") || raw.includes("无法") || raw.includes("AI") || raw.includes("模型") || raw.includes("copyright");
                 
-                // 只要没有出现客服特征词，就接纳它的输出
-                if (raw && !raw.includes("阿里云") && !raw.includes("Qwen") && !raw.includes("模型") && !raw.includes("AI") && !raw.includes("帮助")) {
+                if (raw && !isRefusal) {
                     currentDialogue = raw;
                 }
             }
         }
     } catch (e) {
+        // 尊重 LLM 时序：超时或异常时静默降级，绝不阻断宏观分形流水线
         currentDialogue = "...";
     }
 
     return {
-        name,
-        archetype,
-        intrinsicFactor,
-        shortTermGoal,
-        memoryBuffer,
-        physique,
-        stance,
-        resonance,
-        ...rest,
+        ...agentPacket,
         currentDialogue
     };
 }
