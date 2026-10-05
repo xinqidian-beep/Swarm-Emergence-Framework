@@ -1,4 +1,4 @@
-// main.js - 涌现系统主控总线（修复版）
+// main.js - 涌现系统主控总线（纯净可视化视图）
 const fs = require('fs');
 const path = require('path');
 const { runFractalPipeline } = require('./core/fractalPipeline');
@@ -11,7 +11,12 @@ if (!fs.existsSync(configPath)) {
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
 let currentTick = 0;
-let agents = config.initialAgents.map(a => ({ ...a, ambientEnergy: 0.5, memoryBuffer: [] }));
+let agents = config.initialAgents.map(a => ({ 
+    ...a, 
+    ambientEnergy: 0.5, 
+    memoryBuffer: [],
+    currentDialogue: "..." 
+}));
 
 console.log(`[初始化] 涌现世界 "${config.worldName}" 启动成功！`);
 console.log(`[范式架构] 四元分形闭环 (Sample -> Dynamics -> Compute -> Transmit)`);
@@ -21,25 +26,31 @@ async function runTick() {
     currentTick++;
     let logMsg = `--- Tick ${currentTick} ---\n`;
 
-    // 1. 【环境场计算】基于上一帧集群活跃度计算环境共鸣压强
+    // 1. 【环境场计算】全局场压强聚合
     const totalAmbientEnergy = agents.reduce((acc, a) => {
         const isSpeaking = a.currentDialogue && a.currentDialogue !== "...";
         return acc + (isSpeaking ? 1.2 : 0.2);
     }, 0) / (agents.length || 1);
 
-    // 2. 【分布式并发激发】
+    // 2. 【分布式并发激发】流经四元分形闭环流水线
     agents = await Promise.all(agents.map(agent => {
         const sensoryPacket = {
             ...agent,
+            tick: currentTick,
             ambientEnergy: totalAmbientEnergy
         };
         return runFractalPipeline(sensoryPacket);
     }));
 
-    // 3. 【控制台可视化呈现（确保反引号插值正确）】
+    // 3. 【控制台可视化呈现（百分之百规避模板语法混淆）】
     agents.forEach(agent => {
-        logMsg += `  * 实体: \({agent.name.padEnd(6, ' ')} \vert{} 体质(P):\){agent.physique.toFixed(2)} | 立场(S): \({agent.stance.toFixed(2)} \vert{} 谐振(R):\){agent.resonance.toFixed(2)}\n`;
-        logMsg += `    └─ 涌现台词: "${agent.currentDialogue}"\n`;
+        const name = String(agent.name || "未知").padEnd(6, ' ');
+        const pVal = Number(agent.physique || 0).toFixed(2);
+        const sVal = Number(agent.stance || 0).toFixed(2);
+        const rVal = Number(agent.resonance || 0).toFixed(2);
+        
+        logMsg += `  * 实体: \({name} | 体质(P):\){pVal} | 立场(S): \({sVal} | 谐振(R):\){rVal}\n`;
+        logMsg += `    └─ 涌现台词: "${agent.currentDialogue || '...'}"\n`;
     });
 
     console.log(logMsg);
