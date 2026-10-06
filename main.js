@@ -1,4 +1,4 @@
-// main.js - 涌现系统主控总线（纯净可视化视图）
+// main.js - 涌现系统主控总线（纯净可视化视图 + 区域感知 + 记忆回响）
 const fs = require('fs');
 const path = require('path');
 const { runFractalPipeline } = require('./core/fractalPipeline');
@@ -24,7 +24,7 @@ console.log(`[心跳频率] 每 ${config.tickIntervalMs}ms 推进一次时空 Ti
 
 async function runTick() {
     currentTick++;
-    let logMsg = `--- Tick ${currentTick} ---\n`;
+    let logMsg = "--- Tick " + currentTick + " ---\n";
 
     // 1. 【环境场计算】全局场压强聚合
     const totalAmbientEnergy = agents.reduce((acc, a) => {
@@ -32,30 +32,63 @@ async function runTick() {
         return acc + (isSpeaking ? 1.2 : 0.2);
     }, 0) / (agents.length || 1);
 
-    // 2. 【分布式并发激发】流经四元分形闭环流水线
-    agents = await Promise.all(agents.map(agent => {
-        const sensoryPacket = {
-            ...agent,
-            tick: currentTick,
-            ambientEnergy: totalAmbientEnergy
-        };
-        return runFractalPipeline(sensoryPacket);
-    }));
-
-    // 3. 【控制台可视化呈现（百分之百规避模板语法混淆）】
+    // 2. 【群落区域分组】构建空间社交网，用于同区域多向感知
+    const regionalGroups = {};
     agents.forEach(agent => {
-        const name = String(agent.name || "未知").padEnd(6, ' ');
-        const pVal = Number(agent.physique || 0).toFixed(2);
-        const sVal = Number(agent.stance || 0).toFixed(2);
-        const rVal = Number(agent.resonance || 0).toFixed(2);
-        
-        logMsg += `  * 实体: \({name} | 体质(P):\){pVal} | 立场(S): \({sVal} | 谐振(R):\){rVal}\n`;
-        logMsg += `    └─ 涌现台词: "${agent.currentDialogue || '...'}"\n`;
+        const region = agent.region || "边境";
+        if (!regionalGroups[region]) {
+            regionalGroups[region] = [];
+        }
+        regionalGroups[region].push(agent);
     });
 
+    // 3. 【分布式并发激发】流经四元分形闭环流水线
+    agents = await Promise.all(agents.map(async agent => {
+    const currentRegion = agent.region || "边境";
+    const regionalPeers = regionalGroups[currentRegion] || [];
+    
+    const sensoryPacket = {
+        ...agent,
+        tick: currentTick,
+        ambientEnergy: totalAmbientEnergy,
+        regionalPeers: regionalPeers
+    };
+    
+    const processedAgent = await runFractalPipeline(sensoryPacket);
+    
+    // 【关键修复】：确保全局场压正确回写到实体对象中，消灭 NaN
+    return {
+        ...processedAgent,
+        ambientEnergy: totalAmbientEnergy
+    };
+}));
+    // 4. 【记忆回响闭环】将实体最新吐出的台词沉淀入记忆缓冲区
+    agents.forEach(agent => {
+        if (agent.currentDialogue && agent.currentDialogue !== "...") {
+            if (!agent.memoryBuffer) agent.memoryBuffer = [];
+            agent.memoryBuffer.unshift({
+                text: agent.currentDialogue,
+                timestamp: Date.now()
+            });
+            // 保持记忆容量上限，防止无限膨胀
+            if (agent.memoryBuffer.length > 5) {
+                agent.memoryBuffer.pop();
+            }
+        }
+    });
+
+    // 5. 【控制台可视化呈现】（已修复模板字符串插值语法，确保数据正常渲染）
+    agents.forEach(agent => {        
+        logMsg += "  * 实体: " + agent.name + " (" + agent.profession + " @ " + agent.region + ")\n" +
+              "    [P: " + Number(agent.physique).toFixed(1) + 
+              " | S: " + Number(agent.stance).toFixed(1) + 
+              " | R: " + Number(agent.resonance).toFixed(1) + 
+              " | 场压: " + Number(agent.ambientEnergy).toFixed(2) + "]\n" +
+              "    └─ 涌现台词: \"" + agent.currentDialogue + "\"\n";
+    });
     console.log(logMsg);
 
-    // 4. 【时空持久化落盘】
+    // 6. 【时空持久化落盘】
     const stateData = {
         tick: currentTick,
         timestamp: new Date().toISOString(),

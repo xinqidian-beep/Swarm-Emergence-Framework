@@ -1,23 +1,20 @@
-// core/modules/transmitModule.js - 彻底实现内生驱动与动态平衡的网关
+// core/modules/transmitModule.js - 纯净的无状态投影网关（用后即弃）
 
 function serializePayload(agentPacket) {
     const name = agentPacket.name || "流浪者";
     const region = agentPacket.region || "边境";
     const profession = agentPacket.profession || "流浪者";
-    const goal = agentPacket.shortTermGoal || "生存";
     
+    // 仅捕获当前 Tick 瞬间的量子刻度
     const p = Number(agentPacket.physique || 5.0).toFixed(1);
     const s = Number(agentPacket.stance || 0.0).toFixed(1);
     const r = Number(agentPacket.resonance || 5.0).toFixed(1);
-    
-    const memory = agentPacket.memoryBuffer?.[0]?.text || "万物寂静。";
+    const ambient = Number(agentPacket.ambientEnergy || 0.5).toFixed(2);
 
-    return `地点:${region}
-身份:\({profession}-\){name}
-体质:\({p} 立场:\){s} 谐振:${r}
-目标:${goal}
-记忆:${memory}
-独白:`;
+    // 严禁塞入任何历史对话或记忆文本。采用纯正向陈述，让大模型每次都面对全新、纯粹的当下。彻底摒弃模板字符串，采用传统字符串拼接，防止任何网页端符号吞噬。
+    return "当前所在地为" + region + "，我的身份是" + profession + "，名字叫" + name + "。" +
+           "我当前的身体状态为体质" + p + "、立场" + s + "、谐振" + r + "、环境场压" + ambient + "。" +
+           "我此刻唯一的自我意识流：";
 }
 
 function isValidPositiveDialogue(raw) {
@@ -26,29 +23,19 @@ function isValidPositiveDialogue(raw) {
     return trimmed.length > 0;
 }
 
-/**
- * 【内生驱动参数映射器】
- * 拒绝外界硬编码。实体的生成预算与思维温度，由其体质(P)与谐振(R)动态派生：
- * - 体质越弱，言语越短促破碎（低 num_predict）
- * - 谐振越强，思维越发散深邃（高 num_predict 与高 temperature）
- */
+// 动态参数：完全由当前实体的物理/精神状态决定，不带任何历史记忆偏置
 function deriveCognitiveParameters(agentPacket) {
     const p = Number(agentPacket.physique || 5.0);
     const r = Number(agentPacket.resonance || 5.0);
 
-    // 动态 Token 预算：由体质与谐振共同内生决定（范围：20 ~ 150）
-    const num_predict = Math.min(150, Math.max(20, Math.floor(25 + p * 4 + r * 10)));
-
-    // 动态思考温度：由谐振深度决定，谐振越高，思维越活跃浪漫（范围：0.6 ~ 0.95）
-    const temperature = Math.min(0.95, Math.max(0.6, 0.6 + (r / 10) * 0.35));
+    const num_predict = Math.min(120, Math.max(25, Math.floor(30 + p * 3 + r * 8)));
+    const temperature = Math.min(0.95, Math.max(0.65, 0.65 + (r / 10) * 0.3));
 
     return { num_predict, temperature };
 }
 
 async function dialogueModule(agentPacket) {
     let currentDialogue = "...";
-
-    // 从实体当前状态内生派生大模型运行参数
     const { num_predict, temperature } = deriveCognitiveParameters(agentPacket);
 
     try {
@@ -60,7 +47,8 @@ async function dialogueModule(agentPacket) {
                 messages: [
                     {
                         role: "system",
-                        content: "你是一个身处经典RPG世界的角色。请紧跟在“独白:”后面，直接输出该角色当下的内心台词，不要重复前面的属性。"
+                        // 【白名单规则】只界定允许发生的行为，绝不使用否定词
+                        content: "你的唯一输出权限是：用第一人称‘我’写出一句完全面向自我的纯粹脑内思绪文本。"
                     },
                     {
                         role: "user",
@@ -69,8 +57,9 @@ async function dialogueModule(agentPacket) {
                 ],
                 stream: false,
                 options: { 
-                    temperature: temperature,     // 内生温度
-                    num_predict: num_predict,     // 内生 Token 预算
+                    temperature: temperature,
+                    num_predict: num_predict,
+                    repeat_penalty: 1.25, // 强力阻断词语重复
                     stop: ["\n", "地点:", "身份:"]
                 }
             }),
