@@ -1,18 +1,15 @@
-// core/modules/organicNarrative.js - 彻底告别指令式的自然融合转译
+// core/modules/organicNarrative.js - 叙事织网器
+// 负责将 DeepSeek 转译出的潜意识感知与环境、身份融合成无缝的文学前置背景
+
 function buildOrganicPrompt(agentPacket) {
-    const { name, region, profession, memoryBuffer, phenomenon } = agentPacket;
+    const { name, profession, region, phenomenon } = agentPacket;
 
-    // 获取最近的一条记忆回响（如果有的话）
-    let recentMemory = "";
-    if (memoryBuffer && memoryBuffer.length > 0) {
-        recentMemory = `不久前，耳边似乎还回响着：“${memoryBuffer[0].text}”。`;
-    }
+    return `[当前所在区域: ${region}]
+[角色身份: ${profession} - ${name}]
+[身体直觉与潜意识流动]
+${phenomenon || "周遭一片寂静，空气中弥漫着未知的气息。"}
 
-    // 用沉浸式的小说笔触替代冰冷的指令拼接
-    return `【时空背景：${region}】\n` +
-           `这里是属于\({profession}\){name}的世界。${phenomenon}\n` +
-           `${recentMemory}\n` +
-           `此刻，一阵风吹过，${name}微微闭上双眼，心中自然流淌出的下一句话是：`;
+请结合上述由身体本能与直觉交织而成的沉浸背景，自然地吐出你此刻的内心独白或台词。`;
 }
 
 module.exports = { buildOrganicPrompt };
