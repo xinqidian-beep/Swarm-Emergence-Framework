@@ -1,4 +1,4 @@
-// main.js - 涌现系统主控总线（纯净可视化视图 + 区域感知 + 记忆回响）
+// main.js - 涌现系统主控总线（双层白盒可视化视图）
 const fs = require('fs');
 const path = require('path');
 const { runFractalPipeline } = require('./core/fractalPipeline');
@@ -15,7 +15,8 @@ let agents = config.initialAgents.map(a => ({
     ...a, 
     ambientEnergy: 0.5, 
     memoryBuffer: [],
-    currentDialogue: "..." 
+    currentDialogue: "...",
+    cognitivePrompt: "（等待唤醒）"
 }));
 
 console.log(`[初始化] 涌现世界 "${config.worldName}" 启动成功！`);
@@ -32,7 +33,7 @@ async function runTick() {
         return acc + (isSpeaking ? 1.2 : 0.2);
     }, 0) / (agents.length || 1);
 
-    // 2. 【群落区域分组】构建空间社交网，用于同区域多向感知
+    // 2. 【群落区域分组】构建空间社交网
     const regionalGroups = {};
     agents.forEach(agent => {
         const region = agent.region || "边境";
@@ -44,47 +45,47 @@ async function runTick() {
 
     // 3. 【分布式并发激发】流经四元分形闭环流水线
     agents = await Promise.all(agents.map(async agent => {
-    const currentRegion = agent.region || "边境";
-    const regionalPeers = regionalGroups[currentRegion] || [];
-    
-    const sensoryPacket = {
-        ...agent,
-        tick: currentTick,
-        ambientEnergy: totalAmbientEnergy,
-        regionalPeers: regionalPeers
-    };
-    
-    const processedAgent = await runFractalPipeline(sensoryPacket);
-    
-    // 【关键修复】：确保全局场压正确回写到实体对象中，消灭 NaN
-    return {
-        ...processedAgent,
-        ambientEnergy: totalAmbientEnergy
-    };
-}));
+        const currentRegion = agent.region || "边境";
+        const regionalPeers = regionalGroups[currentRegion] || [];
+        
+        const sensoryPacket = {
+            ...agent,
+            tick: currentTick,
+            ambientEnergy: totalAmbientEnergy,
+            regionalPeers: regionalPeers
+        };
+        
+        const processedAgent = await runFractalPipeline(sensoryPacket);
+        
+        return {
+            ...processedAgent,
+            ambientEnergy: totalAmbientEnergy
+        };
+    }));
+
     // 4. 【记忆回响闭环】将实体最新吐出的台词沉淀入记忆缓冲区
     agents.forEach(agent => {
-        if (agent.currentDialogue && agent.currentDialogue !== "...") {
+        if (agent.currentDialogue && agent.currentDialogue !== "..." && agent.currentDialogue.trim() !== "") {
             if (!agent.memoryBuffer) agent.memoryBuffer = [];
             agent.memoryBuffer.unshift({
                 text: agent.currentDialogue,
                 timestamp: Date.now()
             });
-            // 保持记忆容量上限，防止无限膨胀
             if (agent.memoryBuffer.length > 5) {
                 agent.memoryBuffer.pop();
             }
         }
     });
 
-    // 5. 【控制台可视化呈现】（已修复模板字符串插值语法，确保数据正常渲染）
+    // 5. 【控制台可视化呈现】双层白盒透传输出
     agents.forEach(agent => {        
         logMsg += "  * 实体: " + agent.name + " (" + agent.profession + " @ " + agent.region + ")\n" +
               "    [P: " + Number(agent.physique).toFixed(1) + 
               " | S: " + Number(agent.stance).toFixed(1) + 
               " | R: " + Number(agent.resonance).toFixed(1) + 
               " | 场压: " + Number(agent.ambientEnergy).toFixed(2) + "]\n" +
-              "    └─ 涌现台词: \"" + agent.currentDialogue + "\"\n";
+              "    ├─ [DeepSeek 状态转译]: \"" + (agent.cognitivePrompt || "（静默区）") + "\"\n" +
+              "    └─ [Qwen 具现化台词]: \"" + (agent.currentDialogue || "...") + "\"\n";
     });
     console.log(logMsg);
 
