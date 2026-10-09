@@ -1,4 +1,4 @@
-// main.js - 涌现系统主控总线（双层白盒可视化视图）
+// main.js - 涌现系统主控总线（序时代谢与错峰流转版）
 const fs = require('fs');
 const path = require('path');
 const { runFractalPipeline } = require('./core/fractalPipeline');
@@ -20,7 +20,7 @@ let agents = config.initialAgents.map(a => ({
 }));
 
 console.log(`[初始化] 涌现世界 "${config.worldName}" 启动成功！`);
-console.log(`[范式架构] 四元分形闭环 (Sample -> Dynamics -> Compute -> Transmit)`);
+console.log(`[范式架构] 自洽同构分形闭环 (Dynamics -> Translate -> Narrative -> Transmit -> Feedback)`);
 console.log(`[心跳频率] 每 ${config.tickIntervalMs}ms 推进一次时空 Tick\n`);
 
 async function runTick() {
@@ -33,7 +33,7 @@ async function runTick() {
         return acc + (isSpeaking ? 1.2 : 0.2);
     }, 0) / (agents.length || 1);
 
-    // 2. 【群落区域分组】构建空间社交网
+    // 2. 【群落区域分组】构建空间社交网拓扑
     const regionalGroups = {};
     agents.forEach(agent => {
         const region = agent.region || "边境";
@@ -43,8 +43,9 @@ async function runTick() {
         regionalGroups[region].push(agent);
     });
 
-    // 3. 【分布式并发激发】流经四元分形闭环流水线
-    agents = await Promise.all(agents.map(async agent => {
+    // 3. 【时序错峰与串行交割】摒弃并发洪峰，改为按实体内部时序依次流经分形流水线
+    const updatedAgents = [];
+    for (const agent of agents) {
         const currentRegion = agent.region || "边境";
         const regionalPeers = regionalGroups[currentRegion] || [];
         
@@ -55,29 +56,24 @@ async function runTick() {
             regionalPeers: regionalPeers
         };
         
-        const processedAgent = await runFractalPipeline(sensoryPacket);
-        
-        return {
-            ...processedAgent,
-            ambientEnergy: totalAmbientEnergy
-        };
-    }));
-
-    // 4. 【记忆回响闭环】将实体最新吐出的台词沉淀入记忆缓冲区
-    agents.forEach(agent => {
-        if (agent.currentDialogue && agent.currentDialogue !== "..." && agent.currentDialogue.trim() !== "") {
-            if (!agent.memoryBuffer) agent.memoryBuffer = [];
-            agent.memoryBuffer.unshift({
-                text: agent.currentDialogue,
-                timestamp: Date.now()
+        try {
+            // 串行推进流水线，给本地 Ollama 留出充裕的单线程推理时间，彻底杜绝超时雪崩
+            const processedAgent = await runFractalPipeline(sensoryPacket);
+            updatedAgents.push({
+                ...processedAgent,
+                ambientEnergy: totalAmbientEnergy
             });
-            if (agent.memoryBuffer.length > 5) {
-                agent.memoryBuffer.pop();
-            }
+        } catch (err) {
+            console.error(`[主控调度异常] 实体 ${agent.name} 本轮时空交割失败:`, err.message);
+            updatedAgents.push({
+                ...agent,
+                ambientEnergy: totalAmbientEnergy
+            });
         }
-    });
+    }
+    agents = updatedAgents;
 
-    // 5. 【控制台可视化呈现】双层白盒透传输出
+    // 4. 【控制台可视化呈现】双层白盒透传输出
     agents.forEach(agent => {        
         logMsg += "  * 实体: " + agent.name + " (" + agent.profession + " @ " + agent.region + ")\n" +
               "    [P: " + Number(agent.physique).toFixed(1) + 
@@ -89,7 +85,7 @@ async function runTick() {
     });
     console.log(logMsg);
 
-    // 6. 【时空持久化落盘】
+    // 5. 【时空持久化落盘】
     const stateData = {
         tick: currentTick,
         timestamp: new Date().toISOString(),

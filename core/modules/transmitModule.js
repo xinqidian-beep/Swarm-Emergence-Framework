@@ -1,9 +1,27 @@
-// core/modules/transmitModule.js - 语言中枢（由 Qwen 主力模型驱动，遵循纯结构驱动）
-
+// core/modules/transmitModule.js - 语言中枢（Qwen 具现化与同构透传版）
 async function dialogueModule(agentPacket) {
-    const { name, profession, region, organicContext } = agentPacket;
+    // 1. 解构必要字段，并通过 ...rest 完美捕获并保留上游所有的物理场与记忆残片
+    const { 
+        name = "未知实体", 
+        profession = "流民", 
+        region = "荒野", 
+        organicContext = "", 
+        ...rest 
+    } = agentPacket;
 
     let spokenText = "...";
+
+    // 若无有效的织网上下文，直接短路返回，并通过 ...rest 完整透传
+    if (!organicContext || organicContext.trim() === "") {
+        return {
+            ...rest,
+            name,
+            profession,
+            region,
+            organicContext,
+            dialogue: "..."
+        };
+    }
 
     try {
         const response = await fetch('http://localhost:11434/api/chat', {
@@ -14,42 +32,46 @@ async function dialogueModule(agentPacket) {
                 messages: [
                     {
                         role: "system",
-                        // 摒弃负向约束指令，仅通过纯粹的角色 ontological 设定维持边界
-                        content: `你正在展现${region}的${profession}${name}的内心独白。`
+                        content: `你正在展现${region}的${profession}${name}的内心独白与即时言语。`
                     },
                     {
                         role: "user",
-                        // organicContext 已经完成了所有的有机织网，这里直接作为唯一的上下文承接
                         content: organicContext
                     }
                 ],
                 stream: false,
                 options: {
-                    temperature: 0.8,
-                    num_predict: 80
+                    temperature: 0.7,
+                    num_predict: 128
                 }
             }),
-            signal: AbortSignal.timeout(6000)
+            signal: AbortSignal.timeout(20000)
         });
 
         if (response.ok) {
             const data = await response.json();
             if (data && data.message && data.message.content) {
                 let raw = data.message.content.trim();
-                // 仅做最基础的清洗，不依赖大模型去强行遵守负向指令
-                raw = raw.replace(/^["“]|["”]$/g, '').trim();
+                raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
                 if (raw.length > 0) {
-                    spokenText = raw;
+                    spokenText = raw.replace(/^["「]|["」]$/g, '');
                 }
             }
         }
-    } catch (e) {
+    } catch (error) {
+        console.error(`[Transmit 链路异常] 角色 ${name} 语言具现失败:`, error.message);
         spokenText = "...";
     }
 
+    // 2. 严格遵循同构透传：用 ...rest 将物理张力、记忆缓冲区等底层资产毫无损耗地带给下一阶段
     return {
-        ...agentPacket,
-        dialogue: spokenText
+        ...rest,
+        name,
+        profession,
+        region,
+        organicContext,
+        dialogue: spokenText,
+        currentDialogue: spokenText // 兼容主控台映射
     };
 }
 

@@ -1,6 +1,6 @@
 {
   "worldName": "Skyrim-Local-Cluster",
-  "tickIntervalMs": 2000,
+  "tickIntervalMs": 13000,
   "initialAgents": [
     {
       "name": "哈瓦尔",

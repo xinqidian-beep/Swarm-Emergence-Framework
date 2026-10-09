@@ -1,70 +1,94 @@
-// core/modules/deepseekTranslator.js - 状态到提示词的认知转译器（接口契约对齐版）
+// core/modules/deepseekTranslator.js - 明确以“撰写状态提示词”为契约的转译模块
 
 async function translateStateWithDeepSeek(agentPacket) {
-    const { name, profession, region, physique, stance, resonance, ambientEnergy } = agentPacket;
+    const { 
+        name = "未知实体", 
+        profession = "流民", 
+        region = "荒野", 
+        physique = 0.0, 
+        stance = 0.0, 
+        resonance = 0.0, 
+        ambientEnergy = 0.5, 
+        ...rest 
+    } = agentPacket;
 
-    // 1. 势能门控：低张力下无需生成复杂认知提示词
-    const innerTension = Math.abs(stance) * 0.5 + Math.abs(resonance) * 0.5;
-    if (innerTension < 1.3) {
-        return ""; // 返回空字符串，交由流水线判定静默
+    const totalTension = Math.abs(physique) * 0.3 + Math.abs(stance) * 0.4 + Math.abs(resonance) * 0.3;
+    if (totalTension < 1.0) {
+        return ""; 
     }
 
-    // 2. 核心职责：将全量状态拓扑，转译为富有张力的“认知与躯体感知提示词”
-    const environmentalFieldPrompt = `【时空域：${region} · ${profession} ${name}】
-当前肉体与心境状态：
-- 体质势能 P: ${Number(physique).toFixed(2)}
-- 心理立场 S: ${Number(stance).toFixed(2)}
-- 感知谐振 R: ${Number(resonance).toFixed(2)}
-- 环境场压: ${Number(ambientEnergy).toFixed(2)}
+    // 【核心契约调整】：明确告知 DeepSeek 它的工作是“撰写下游状态提示词”
+    const promptWriterTemplate = `【你的任务】
+为下游的叙事引擎撰写一段关于该实体的**“身体感觉与心理压力的状态提示词”**。
 
-任务：请根据上述客观状态，为该实体生成一段**内隐的心理独白与躯体触感基调提示词**（约30-50字），供后续语言模型用来生成即时台词。
-要求：直接输出提示词内容。`;
+【输入数据】
+- 角色目标：${region}的${profession} ${name}
+- 活力 P = ${physique.toFixed(1)}
+- 立场 S = ${stance.toFixed(1)}
+- 感知 R = ${resonance.toFixed(1)}
+- 环境压强 = ${ambientEnergy.toFixed(2)}
 
-    let cognitivePromptContext = "周围一片寂静，呼吸平稳。";
+【核心映射规则】
+1. 0 是正常平衡点。
+2. 绝对值越大（离 0 越远，向 -5 或 +5 靠近）：角色受到的身体负荷、心理撕裂感和压迫阻力就越极端、越沉重。
+   - P：正代表肌肉贲张、气血翻涌；负代表四肢沉重、快要虚脱。
+   - S：正代表死死咬定、固执如铁；负代表信念坍塌、直犯嘀咕。
+   - R：正代表耳朵刺痛、神经紧绷；负代表感官封闭、像掉进真空。
+
+【输出要求】
+仅输出一句话作为该角色的状态感官提示词（例如：“手臂肌肉酸胀得发抖”、“心里像塞了一团乱麻”）。`;
+
+    let resultText = "呼吸平稳，身体保持着基本的平衡。";
 
     try {
         const response = await fetch('http://localhost:11434/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: "deepseek-r1:1.5b", // 负责深层推理与状态转译
+                model: "deepseek-r1:1.5b",
                 messages: [
                     {
                         role: "system",
-                        content: "你是一个深谙物理感官与心理变化的文学解构者，负责将多维物理状态精准转译为具身心理提示词。"
+                        content: "你是一个专门为下游叙事引擎撰写角色状态提示词的生成器。"
                     },
                     {
                         role: "user",
-                        content: translationPrompt
+                        content: promptWriterTemplate
                     }
                 ],
                 stream: false,
                 options: {
-                    temperature: 0.5,
-                    num_predict: 60 
+                    temperature: 0.2,
+                    num_predict: 96
                 }
             }),
-            signal: AbortSignal.timeout(15000)
+            signal: AbortSignal.timeout(10000)
         });
 
         if (response.ok) {
             const data = await response.json();
-            if (data && data.message && data.message.content) {
-                let raw = data.message.content.trim();
-                // 清洗推理思考标签
-                raw = raw.replace(/[\s\S]*?<\/think>/g, '').trim();
-                if (raw.length > 0) {
-                    cognitivePromptContext = raw.replace(/^["「]|["」]$/g, '');
+            const rawContent = data?.message?.content || "";
+            
+            if (rawContent.length > 0) {
+                let cleanText = rawContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+                if (cleanText.length === 0 && rawContent.includes("<think>")) {
+                    const innerThink = rawContent.replace(/<\/?think>/g, '').trim();
+                    cleanText = innerThink.split(/[。！？\n]/).filter(s => s.trim().length > 2)[0] || "";
+                }
+                if (cleanText.length > 0) {
+                    resultText = cleanText.split('\n')[0].replace(/^["「]|["」]$/g, '');
                 }
             }
         }
     } catch (e) {
-        cognitivePromptContext = `实体${name}感官受阻，陷入局部时空滞重。`;
+        resultText = `${name}的身体在局域压强中微微一沉。`;
     }
 
-    // 3. 返回由 DeepSeek 转译生成的“认知提示词”，供下游模块消费
-    return cognitivePromptContext;
+    if (typeof resultText !== 'string') {
+        resultText = String(resultText || "内稳态维持中。");
+    }
+
+    return resultText;
 }
 
-// 导出与 fractalPipeline.js 严格契约对齐的函数名
 module.exports = { translateStateWithDeepSeek };
