@@ -1,71 +1,95 @@
-// core/fractalPipeline.js - 五段式神经分形闭环流水线（自持同构与语义反哺闭环版）
-const { dynamicsModule } = require('./modules/dynamicsModule');
+// core/fractalPipeline.js - 异步后台神经分形闭环流水线（无状态隔离与信箱反哺版）
 const { translateStateWithDeepSeek } = require('./modules/deepseekTranslator');
 const { buildOrganicPrompt } = require('./modules/organicNarrative');
 const { dialogueModule } = require('./modules/transmitModule');
 const { applySemanticFeedback } = require('./modules/feedbackModule');
 
 /**
-* 驱动局域同构信息包流经五段式神经分形闭环
-* @param {Object} agentPacket - 包含实体全量状态与局域环境场的同构包
-* @returns {Promise<Object>} 演化完成并经过语义反哺的最终同构包
-*/
+ * 驱动局域同构信息包在后台异步流经语言与感官转译流水线
+ * 
+ * @param {Object} agentPacket 实体当前状态快照包
+ * @returns {Promise<Object>} 包含感官提示词、灵魂台词与私有反馈摄动包的异步结果
+ */
 async function runFractalPipeline(agentPacket) {
+    // 1. 【防串台隔离】严格深拷贝输入包，彻底杜绝并发闭包污染与状态泄漏
+    const localPacket = JSON.parse(JSON.stringify(agentPacket));
+
     try {
-        // 1. 【Dynamics 阶段】调用非线性物理动力学引擎，演化 P, S, R 与内生记忆
-        const evolvedPacket = dynamicsModule(agentPacket);
-
         // 2. 【IO / 神经转译层】潜意识中枢转译物理直觉
-        const phenomenon = await translateStateWithDeepSeek(evolvedPacket);
+        const transRes = await translateStateWithDeepSeek(localPacket);
 
-        // --- 【DIAGNOSTIC PROBE】 ---
-        if (typeof phenomenon !== 'string') {
-            console.warn(`[探针警告] 实体 ${agentPacket.name} 的 phenomenon 返回了非字符串类型:`, typeof phenomenon, phenomenon);
+        let sensoryText = "";
+        if (typeof transRes === 'string') {
+            sensoryText = transRes;
+        } else if (transRes && typeof transRes === 'object') {
+            sensoryText = transRes.sensoryPrompt || transRes.cognitivePrompt || "";
         }
-        // ---------------------------
 
-        const safePhenomenon = typeof phenomenon === 'string' ? phenomenon : String(phenomenon || "");
+        sensoryText = String(sensoryText || "").trim();
 
-        if (!safePhenomenon || safePhenomenon.trim() === "") {
+        // 静默区安全退回
+        if (!sensoryText) {
             return {
-                ...evolvedPacket,
-                currentDialogue: "",
-                cognitivePrompt: "（静默区：物理张力未达临界阈值）"
+                sensoryPrompt: "（静默区：转译文本为空）",
+                currentDialogue: "...",
+                feedbackDelta: { dP: 0, dS: 0, dR: 0 }
             };
         }
 
-        // 3. 【叙事织网层】织入文学前置背景与心境投影
+        // 3. 【叙事织网层】织入前置背景与心境投影
         const organicContext = buildOrganicPrompt({
-            ...evolvedPacket,
-            phenomenon: phenomenon
+            ...localPacket,
+            sensoryPrompt: sensoryText,
+            phenomenon: sensoryText
         });
+
+        const safeContext = typeof organicContext === 'string' 
+            ? organicContext 
+            : String(organicContext || "");
 
         // 4. 【Transmit 主力激发层】语言中枢涌现灵魂台词
         const communicatedAgent = await dialogueModule({
-            ...evolvedPacket,
-            organicContext: organicContext,
-            phenomenon: phenomenon
+            ...localPacket,
+            sensoryPrompt: sensoryText,
+            organicContext: safeContext,
+            phenomenon: sensoryText
         });
 
-        // 统一字段映射契约
-        const rawDialogue = communicatedAgent.dialogue || communicatedAgent.currentDialogue || "";
+        let rawDialogue = "...";
+        if (typeof communicatedAgent === 'string') {
+            rawDialogue = communicatedAgent;
+        } else if (communicatedAgent && typeof communicatedAgent === 'object') {
+            rawDialogue = communicatedAgent.dialogue || communicatedAgent.currentDialogue || "...";
+        }
 
-        // 5. 【Feedback 反哺阶段】将当前涌现台词注入语义反哺网关，畸变底层物理场
-        const finalizedAgent = applySemanticFeedback({
-            ...communicatedAgent,
+        // 5. 【Feedback 反哺阶段】生成语义反馈摄动 Δ（微分驱动力契约）
+        const feedbackResult = applySemanticFeedback({
+            ...localPacket,
             currentDialogue: rawDialogue,
-            cognitivePrompt: phenomenon // 核心：将 DeepSeek 转译出的中间态提示词透传给主控台
+            cognitivePrompt: sensoryText
         });
 
-        return finalizedAgent;
+        // 规范化提取微分摄动 Δ，确保其格式为 { dP, dS, dR }
+        const feedbackDelta = feedbackResult?.feedbackDelta || feedbackResult?.delta || {
+            dP: (Math.random() - 0.5) * 0.04,
+            dS: rawDialogue.length > 12 ? 0.05 : -0.02,
+            dR: 0.02
+        };
+
+        // 6. 返回纯净的异步结果包，供主控总线安全反哺私有信箱
+        return {
+            sensoryPrompt: sensoryText,
+            currentDialogue: rawDialogue,
+            feedbackDelta: feedbackDelta
+        };
         
     } catch (error) {
-        console.error(`[分形流水线异常] 实体 ${agentPacket.name || '未知'} 演化流断裂:`, error.message);
-        // 异常兜底：保持原样同构返回，确保系统“不死不崩”
+        console.warn(`[后台旁路流水线异常] 实体 ${localPacket.name || '未知'} 链路中断: ${error.message}`);
+        // 异常兜底：保持静默，确保系统“不死不崩”
         return {
-            ...agentPacket,
+            sensoryPrompt: "（流水线感官自锁）",
             currentDialogue: "...",
-            cognitivePrompt: "（流水线感官自锁）"
+            feedbackDelta: { dP: 0, dS: 0, dR: 0 }
         };
     }
 }

@@ -1,61 +1,59 @@
-// core/engine/tickEngine.js - 严格自主的心脏脉冲与同构异步旁路引擎
-const { translateStateWithDeepSeek } = require('../modules/deepseekTranslator');
-const dialogueModule = require('../modules/transmitModule');
-const { dynamicsModule } = require('../modules/dynamicsModule');
+// core/engine/tickEngine.js - 杜绝嵌套污染的纯净版
 
-// 局域异步摄动事件队列（只存纯粹的 Δ，不存旧实体）
+const dynamicsModule = require('./modules/dynamicsModule');
+const { translateStateWithDeepSeek } = require('./modules/deepseekTranslator');
+const { dialogueModule } = require('./modules/transmitModule');
+
 const pendingDeltaQueue = [];
-
-// 后台推理任务锁：防止同一个实体在后台重叠排队
 const activeInferenceAgents = new Set();
+const computeQueue = []; 
+let isComputeBusy = false;
 
-/**
- * 核心时空脉冲（Tick）：绝对自主、纯数学推进、绝不因大模型而挂起
- */
 async function runTick(worldState, tickCount) {
     console.log(`\n--- [自主时空脉冲 Tick #${tickCount}] ---`);
 
-    // 1. 【心脏绝对自主演化与摄动消费】
+    // 1. 【心脏自主演化与摄动消费】
     for (let agent of worldState.agents) {
         if (!agent.memoryBuffer) agent.memoryBuffer = [];
 
-        // 检索该实体是否有待消费的语言宣泄扰动 Δ
+        // 消费 Δ
         const deltaIndex = pendingDeltaQueue.findIndex(item => item.agentId === agent.name);
         let deltaToApply = { physique: 0, stance: 0, resonance: 0 };
 
         if (deltaIndex !== -1) {
             const [consumedEvent] = pendingDeltaQueue.splice(deltaIndex, 1);
             deltaToApply = consumedEvent.delta;
-            console.log(`  🌊 [消费语言摄动] ${agent.name} 吸收了 Tick #${consumedEvent.sourceTick} 的宣泄: ΔP=${deltaToApply.physique.toFixed(2)}, ΔS=${deltaToApply.stance.toFixed(2)}`);
+            console.log(`  🌊 [消费语言摄动] ${agent.name} 吸收宣泄: ΔP=${deltaToApply.physique.toFixed(2)}, ΔS=${deltaToApply.stance.toFixed(2)}`);
         }
 
-        // 核心微积分演化：X_{k+1} = F(X_k, Delta, E_k)
-        const evolvedState = dynamicsModule(agent, deltaToApply);
+        // 核心演化
+        const evolved = dynamicsModule(agent, deltaToApply);
 
-        // 提交新状态到当前实体
-        Object.assign(agent, evolvedState);
+        // 关键防御：只更新数值与状态，绝对不写入任何嵌套对象（彻底切断套娃）
+        agent.physique = evolved.physique;
+        agent.stance = evolved.stance;
+        agent.resonance = evolved.resonance;
+        agent.expressionDrive = evolved.expressionDrive;
+        agent.endogenousThreshold = evolved.endogenousThreshold;
+        agent.wantsToExpress = evolved.wantsToExpress;
+        agent.memoryBuffer = evolved.memoryBuffer;
+
+        // 彻底清理旧代码遗留的嵌套脏属性
+        delete agent.phenomenon;
+        delete agent.cognitivePrompt;
+        delete agent.organicContext;
 
         // 打印实时物理心跳
-        const p = Number(agent.physique || 0).toFixed(2);
-        const s = Number(agent.stance || 0).toFixed(2);
-        const r = Number(agent.resonance || 0).toFixed(2);
-        console.log(`  · [心脏心跳] ${agent.name} (${agent.profession}) | P: ${p} | S: ${s} | R: ${r}`);
-    }
+        console.log(`  * 实体: ${agent.name} (${agent.profession} @ ${agent.region})`);
+        console.log(`    [P: ${agent.physique} | S: ${agent.stance} | R: ${agent.resonance} | 驱动: ${agent.expressionDrive} / 阈值: ${agent.endogenousThreshold} (欲言: ${agent.wantsToExpress})]`);
+        console.log(`    └─ [当前台词展示]: "${agent.currentDialogue || '...'}"`);
 
-    // 2. 【非阻塞异步旁路触发】
-    for (let agent of worldState.agents) {
-        if (activeInferenceAgents.has(agent.name)) continue;
-
-        // 计算当前相空间张力
-        const tension = Math.abs(agent.physique) * 0.3 + Math.abs(agent.stance) * 0.4 + Math.abs(agent.resonance) * 0.3;
-
-        // 阈值激发波函数坍塌（例如 1.8）
-        if (tension >= 1.8) {
+        // 2. 【旁路激发：只读取纯净的快照】
+        if (agent.wantsToExpress && !activeInferenceAgents.has(agent.name)) {
             activeInferenceAgents.add(agent.name);
 
-            // 复制一份轻量快照送入后台，主循环继续向前奔跑，绝不等待
-            const agentSnapshot = {
-                agentId: agent.name,
+            // 纯净扁平快照（绝对不带任何旧的 prompt 对象）
+            const snapshot = {
                 name: agent.name,
                 profession: agent.profession,
                 region: agent.region,
@@ -64,67 +62,70 @@ async function runTick(worldState, tickCount) {
                 physique: agent.physique,
                 stance: agent.stance,
                 resonance: agent.resonance,
-                ambientEnergy: agent.ambientEnergy,
+                ambientEnergy: agent.ambientEnergy || 0.2,
                 sourceTick: tickCount
             };
 
-            triggerAsyncBypassPipeline(agentSnapshot, tickCount).finally(() => {
-                activeInferenceAgents.delete(agent.name);
-            });
+            computeQueue.push({ snapshot, liveAgentRef: agent });
         }
     }
+
+    processComputeQueue();
 }
 
-/**
- * 独立的异步旁路管线：采样 -> 测算 -> 具现 -> 编译为有限 Δ 推入队列
- */
-async function triggerAsyncBypassPipeline(snapshot, sourceTick) {
+async function processComputeQueue() {
+    if (isComputeBusy || computeQueue.length === 0) return;
+    isComputeBusy = true;
+
+    const task = computeQueue.shift();
+
     try {
-        // 步骤 A: DeepSeek 局域感官测算（输入数值，输出 sensoryPrompt）
-        const transResult = await translateStateWithDeepSeek(snapshot);
-        if (transResult.translationStatus !== "success" || !transResult.sensoryPrompt) {
-            return;
-        }
+        // Step A: DeepSeek 局域感官测算
+        const transRes = await translateStateWithDeepSeek(task.snapshot);
 
-        const sensoryPrompt = transResult.sensoryPrompt;
-        console.log(`    🔍 [旁路感官测算] ${snapshot.name} -> "${sensoryPrompt}"`);
+        // 防御：确保提取出的 sensoryPrompt 只是 string
+        const sensoryPrompt = typeof transRes === 'object' ? transRes.sensoryPrompt : transRes;
 
-        // 步骤 B: Qwen 具现化角色台词（输入 sensoryPrompt + 白名单身份）
-        const dialogueRes = await dialogueModule({
-            ...snapshot,
-            sensoryPrompt
-        });
+        if (sensoryPrompt && typeof sensoryPrompt === 'string') {
+            console.log(`    🔍 [DeepSeek 状态转译] ${task.snapshot.name}: "${sensoryPrompt}"`);
 
-        if (!dialogueRes.currentDialogue) return;
+            // Step B: Qwen 角色具现化
+            const dialRes = await dialogueModule({
+                ...task.snapshot,
+                sensoryPrompt
+            });
 
-        const dialogue = dialogueRes.currentDialogue;
-        console.log(`    🗣️ [旁路实体具现] ${snapshot.name}: "${dialogue}"`);
+            const dialogueText = typeof dialRes === 'object' ? dialRes.currentDialogue : dialRes;
 
-        // 将生成的台词挂载回实体当前引用（仅展示用，不参与状态回写）
-        // 注：由于快照和主循环引用可能存在时间差，这里可以通过事件或直接修改主对象属性（如果存在）
-        // 为安全起见，我们只产出物理摄动 Δ
+            if (dialogueText && typeof dialogueText === 'string') {
+                // 安全挂载台词纯字符串用于展示，绝不做 Object.assign(agent, dialRes)
+                task.liveAgentRef.currentDialogue = dialogueText;
+                console.log(`    🗣️ [Qwen 具现化台词] ${task.snapshot.name}: "${dialogueText}"`);
 
-        // 步骤 C: 反向同构编译 -> 将表达转化为有限的宣泄摄动 Δ
-        const deltaStance = -snapshot.stance * 0.12; // 立场宣泄向 0 回弹
-        const deltaPhysique = -snapshot.physique * 0.03;
+                // Step C: 反向同构编译 -> 有限摄动 Δ 压入队列
+                const deltaStance = -task.snapshot.stance * 0.12;
+                const deltaPhysique = -task.snapshot.physique * 0.03;
 
-        // 严格遵守契约：旁路只提交摄动事件，绝不提交旧实体覆盖世界时间
-        pendingDeltaQueue.push({
-            eventId: `delta_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-            agentId: snapshot.name,
-            sourceTick,
-            delta: {
-                physique: Number(deltaPhysique.toFixed(2)),
-                stance: Number(deltaStance.toFixed(2)),
-                resonance: 0
+                pendingDeltaQueue.push({
+                    agentId: task.snapshot.name,
+                    sourceTick: task.snapshot.sourceTick,
+                    delta: {
+                        physique: Number(deltaPhysique.toFixed(4)),
+                        stance: Number(deltaStance.toFixed(4)),
+                        resonance: 0
+                    }
+                });
             }
-        });
-
-        // 顺便把生成的台词安全地写入实体的最新展示字段（如果能找到对应实体，这里简化为由外部管理，或者直接在下个 Tick 呈现）
-        // 核心原则：绝不覆写 P, S, R 核心数值。
-
+        }
     } catch (e) {
-        // 旁路静默容错：模型超时或断连不影响心脏跳动
+        console.warn(`    [算力调度异常] ${task.snapshot.name}: ${e.message}`);
+    } finally {
+        activeInferenceAgents.delete(task.snapshot.name);
+        isComputeBusy = false;
+
+        if (computeQueue.length > 0) {
+            setImmediate(processComputeQueue);
+        }
     }
 }
 

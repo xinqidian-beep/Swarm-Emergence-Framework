@@ -1,7 +1,7 @@
 {
   "worldName": "Skyrim-Local-Cluster",
   "tickIntervalMs": 13000,
-  "initialAgents": [
+  "entities": [
     {
       "name": "哈瓦尔",
       "region": "天际省·雪漫城",

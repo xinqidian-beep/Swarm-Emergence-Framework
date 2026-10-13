@@ -1,65 +1,82 @@
-// core/modules/dynamicsModule.js - 【SEALED IMMUTABLE DYNAMICS CORE】
-// 声明：此乃宇宙底层物理法则。法则一经封存，永不修改。
-// 它只接受状态（State）的输入与演化，绝不接受任何运行规则（Rule）的动态更改。
+// core/dynamics/dynamicsModule.js - 严格对齐动态阈值与驱动力契约的自治核心
 
-function dynamicsModule(agentPacket) {
-    // 1. 【State Ingestion】纯粹的状态采样解构
-    const { 
-        physique = 0.0, 
-        stance = 0.0, 
-        resonance = 0.0, 
-        intrinsicFactor = 0.0, 
-        memoryBuffer = [], 
-        currentDialogue = "",
-        ambientEnergy = 0.5, 
-        ...rest 
-    } = agentPacket;
+function finiteNumber(v, fallback = 0) {
+    return (typeof v === 'number' && Number.isFinite(v)) ? v : fallback;
+}
 
-    const MAX_LIMIT = 5.0; // 宇宙对称边界 [-5.0, +5.0]
+/**
+ * 动态内生阈值生成规律（由环境压强与当前局部状态耦合决定的动态门槛）
+ * 法则本身是封闭固定的，但阈值随环境与状态动态浮动。
+ */
+function computeDynamicThreshold(ambientEnergy, P, S, R) {
+    const baseThreshold = 1.6;
+    // 环境压强越高，或者当前身心状态波动越大，表达所需的张力门槛也随之微妙起伏
+    return baseThreshold + 0.3 * finiteNumber(ambientEnergy, 0.2) + 0.05 * Math.sin(P + S + R);
+}
 
-    // 2. 【Immutable Physical Laws】不可篡改的物理场演化定律
-    // 非线性阻尼场（边界自适应减速）
-    const pDamping = 1 - Math.pow(physique / MAX_LIMIT, 2);
-    const sDamping = 1 - Math.pow(stance / MAX_LIMIT, 2);
-    const rDamping = 1 - Math.pow(resonance / MAX_LIMIT, 2);
+/**
+ * 推进单个 Tick 的相空间演化
+ * @param {Object} agent - 实体当前完整状态
+ * @param {Array} deltaQueue - 该实体专属的反馈摄动队列（契约：作为微分驱动力输入，经 dt 与耗散处理）
+ * @param {Number} ambientEnergy - 环境压强（纯元数据透传）
+ */
+function stepDynamics(agent, deltaQueue = [], ambientEnergy = 0.2) {
+    // 1. 内部状态保留完整高精度浮点数
+    let P = finiteNumber(agent.physique, 0);
+    let S = finiteNumber(agent.stance, 0);
+    let R = finiteNumber(agent.resonance, 0);
 
-    // 永不停息的微观热噪声与环境场压耦合
-    const rawP = (Math.random() - 0.5) * 1.2 * Math.max(0.1, pDamping);
-    const rawS = (Math.random() - 0.5) * 0.8 * Math.max(0.1, sDamping) + (ambientEnergy - 0.5) * 0.15;
-    const rawR = (Math.random() - 0.5) * 1.0 * Math.max(0.1, rDamping) + intrinsicFactor + ambientEnergy * 0.1;
+    // 2. 消费该实体专属的反馈摄动 Δ（安全防护：防范空对象或断裂条目）
+    let deltaP = 0, deltaS = 0, deltaR = 0;
+    while (deltaQueue && deltaQueue.length > 0) {
+        const d = deltaQueue.shift();
+        deltaP += finiteNumber(d?.dP, 0);
+        deltaS += finiteNumber(d?.dS, 0);
+        deltaR += finiteNumber(d?.dR, 0);
+    }
 
-    // 0 中心双向演化：含弹性恢复力与维度交叉耦合
-    const newPhysique = Math.max(-MAX_LIMIT, Math.min(MAX_LIMIT, physique + rawP + resonance * 0.04 - physique * 0.06));
-    const newStance = Math.max(-MAX_LIMIT, Math.min(MAX_LIMIT, stance + rawS + physique * 0.02 - stance * 0.06));
-    const newResonance = Math.max(-MAX_LIMIT, Math.min(MAX_LIMIT, resonance + rawR - Math.abs(stance) * 0.06 - resonance * 0.06));
+    // 3. 引入微小的内生背景微扰（防止陷入绝对零度热寂，向内不死）
+    const microNoise = () => (Math.random() - 0.5) * 0.002;
+    deltaP += microNoise();
+    deltaS += microNoise();
+    deltaR += microNoise();
 
-    // 3. 【Thermodynamic Memory Law】热力学内生记忆演化（无任何命令式截断）
-    const currentSalience = Math.abs(newStance) * ((Math.abs(newResonance) + 1) / (MAX_LIMIT + 1)) + Math.abs(newPhysique) * 0.2;
-    
-    const memoryEntry = {
-        text: currentDialogue,
-        weight: currentSalience
-    };
+    // 4. 离散步进参数
+    const dt = 0.2;
+    const linearDamping = 0.15;
+    const restoringCoefficient = 0.008;
 
-    // 动态内生认知带宽阈值（由共鸣与环境压强自主决定记忆生死）
-    const cognitiveBandwidthThreshold = 0.25 * (1 - Math.abs(newResonance) / MAX_LIMIT) + (1 - ambientEnergy) * 0.15;
+    // 5. 半隐式稳定更新（防爆散：恢复力与阻尼按隐式分母处理）
+    const denomP = 1.0 + (linearDamping + restoringCoefficient * P * P) * dt;
+    const denomS = 1.0 + (linearDamping + restoringCoefficient * S * S) * dt;
+    const denomR = 1.0 + (linearDamping + restoringCoefficient * R * R) * dt;
 
-    const evolvedMemories = [...memoryBuffer, memoryEntry]
-        .map(item => ({
-            text: item.text,
-            weight: item.weight * (0.88 + (Math.random() - 0.5) * 0.1) // 伴随热涨落的自然衰减
-        }))
-        .filter(item => item.weight >= cognitiveBandwidthThreshold); // 自主突现与遗忘
+    let newP = (P + (Math.sin(S) + deltaP) * dt) / denomP;
+    let newS = (S + (Math.sin(R) + deltaS) * dt) / denomS;
+    let newR = (R + (Math.sin(P) + deltaR) * dt) / denomR;
 
-    // 4. 【Homomorphic Passthrough】同构打包透传（将演化后的状态与不需要的宏观属性完美交割）
+    // 6. 使用 Math.hypot 计算高精度张力
+    const tension = Math.hypot(newP, newS, newR);
+
+    // 7. 动态内生门控：通过动态阈值生成规律判定表达资格
+    const threshold = computeDynamicThreshold(ambientEnergy, newP, newS, newR);
+    const wantsToExpress = tension > threshold;
+
+    // 8. 返回完整精度的计算结果（写回权归核心所有，ambientEnergy 纯元数据透传）
     return {
-        ...rest,
-        physique: Number(newPhysique.toFixed(2)),
-        stance: Number(newStance.toFixed(2)),
-        resonance: Number(newResonance.toFixed(2)),
-        intrinsicFactor,
-        memoryBuffer: evolvedMemories
+        ...agent,
+        physique: newP,
+        stance: newS,
+        resonance: newR,
+        tension: Number(tension.toFixed(2)),
+        wantsToExpress,
+        ambientEnergy: finiteNumber(ambientEnergy, 0.2)
     };
 }
 
-module.exports = { dynamicsModule };
+// 全方位兼容契约绑定
+stepDynamics.stepDynamics = stepDynamics;
+stepDynamics.dynamicsModule = stepDynamics;
+stepDynamics.default = stepDynamics;
+
+module.exports = stepDynamics;

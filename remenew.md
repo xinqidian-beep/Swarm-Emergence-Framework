@@ -63,3 +63,28 @@
 大模型（LLM）在面对纯粹的物理数字时，依然表现出较高的不确定性：大面积的 "..." 表明模型在没有强力行为引导时倾向于保持沉默；而 Tick 7 米拉的拒绝回复则证明，单纯的冷冰冰数字提示词依然容易触发大模型的安全防线或迷茫状态。
 
 20261009改动内容简要总结时空自持代谢钟（Metabolic Pacing）：彻底抛弃了死板、硬编码的 setInterval(..., 13000)。引入了全息自持时钟，让系统下一次 Tick 的触发间隔由当前世界的全局场压与整体张力自主决定（动态伸缩）。DeepSeek 现象学转译器（Translator）重构：剥离了所有脆弱的、指令驱动的文学词典与否定句约束。确立了其作为“下游状态提示词生成器”的唯一核心定位：不演戏、不写台词，纯粹根据多维动力学指标（$P, S, R$）的极值偏离与非线性阻力，动态翻译出底层物理触感与内中心境底色。职责边界的严丝合缝（防模块污染）：明确并切断了 DeepSeek 与 Qwen 模块之间的职责越界，确保上游提供纯净的“内隐意境背景”，下游 Qwen 负责沉浸式具现化台词，实现了分形架构的自洽闭环。
+
+20261013
+Swarm-Emergence-Framework/
+│
+├── core/
+│   ├── actor/
+│   │   └── SovereignAgent.js      # 【核心】独立的自治节点（生命周期、私有信箱、张力心跳）
+│   │
+│   ├── bus/
+│   │   └── WorldBus.js            # 【核心】去中心化空间消息总线（信箱投递、区域广播）
+│   │
+│   └── operators/
+│       ├── translatorOperator.js  # 【纯净算子】绝对局部的状态转译（不解释环境、不写台词）
+│       └── transmitOperator.js    # 【纯净算子】绝对局部的第一人称具现（无硬编码停止词）
+│
+├── data/                          # （可选）初始实体配置种子
+│   └── initialAgents.json         # 存放哈瓦尔、莉迪亚、米拉的初始属性
+│
+├── main.js                        # 【唯一的启动入口】只负责唤醒 Actor 节点与挂载总线
+├── package.json
+└── README.md
+
+后端核心代码(server.js, testSkyrimClient.js 等)NPC 的大脑和通信网桥放在你的项目文件夹：C:\Swarm-Emergence-Framework\
+
+天际5 游戏脚本(SovereignBridgeQuest.psc)游戏里的“眼睛”（负责检测玩家位置）放在 MO2 的 Mod 文件夹：C:\TSEV Skyrim LE\Mod Organizer\mods\
